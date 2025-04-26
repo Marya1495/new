@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bird Shooting Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #282c34;
+            color: white;
+            font-family: Arial, sans-serif;
+            user-select: none;
+        }
+        canvas {
+            display: block;
+        }
+        #gameInfo {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 24px;
+            background: rgba(0,0,0,0.5);
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+        #levelUp {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 48px;
+            color: #4CAF50;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            transition: opacity 0.5s;
+            text-align: center;
+        }
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 16px;
+            background: rgba(0,0,0,0.5);
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="gameInfo">Level: 1 | Score: 0 | Target: 30</div>
+    <div id="levelUp"></div>
+    <div id="instructions">Move mouse to aim | Space to shoot</div>
+    
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // Game configuration
+        const LEVEL_TARGETS = [30, 50, 80, 120, 150];
+        const LEVEL_COLORS = ['#4CAF50', '#2196F3', '#9C27B0', '#FF9800', '#F44336'];
+        
+        // Game state
+        let player = { x: canvas.width / 2, y: canvas.height - 100, width: 50, height: 50 };
+        let bullets = [];
+        let birds = [];
+        let score = 0;
+        let level = 1;
+        let gameRunning = true;
+        let birdSpeed = 2;
+        let spawnRate = 1000;
+        let levelUpDisplayTime = 0;
+        let birdSize = 50;
+
+        // Create images
+        function createGunImage() {
+            const gunCanvas = document.createElement('canvas');
+            gunCanvas.width = 50;
+            gunCanvas.height = 50;
+            const gunCtx = gunCanvas.getContext('2d');
+            
+            gunCtx.fillStyle = '#ffffff';
+            gunCtx.fillRect(15, 0, 20, 40);
+            gunCtx.fillRect(5, 10, 40, 20);
+            
+            return gunCanvas;
+        }
+
+        function createBirdImage(size, color) {
+            const birdCanvas = document.createElement('canvas');
+            birdCanvas.width = size;
+            birdCanvas.height = size;
+            const birdCtx = birdCanvas.getContext('2d');
+            
+            birdCtx.fillStyle = color;
+            birdCtx.beginPath();
+            birdCtx.arc(size/2, size/2, size/2.5, 0, Math.PI * 2);
+            birdCtx.fill();
+            
+            birdCtx.fillStyle = '#ff6600';
+            birdCtx.beginPath();
+            birdCtx.moveTo(size-5, size/3);
+            birdCtx.lineTo(size-size/3, size/2);
+            birdCtx.lineTo(size-5, size/1.5);
+            birdCtx.fill();
+            
+            return birdCanvas;
+        }
+
+        const gunImage = createGunImage();
+        let birdImage = createBirdImage(birdSize, '#ff9900');
+
+        function drawPlayer() {
+            ctx.drawImage(gunImage, player.x, player.y, player.width, player.height);
+        }
+
+        function drawBullets() {
+            bullets.forEach((bullet, index) => {
+                bullet.y -= 7;
+                if (bullet.y < 0) bullets.splice(index, 1);
+                ctx.fillStyle = '#ff0000';
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+            });
+        }
+
+        function drawBirds() {
+            birds.forEach((bird, index) => {
+                bird.y += bird.speed;
+                if (bird.y > canvas.height) {
+                    birds.splice(index, 1);
+                    if (gameRunning) score = Math.max(0, score - 1);
+                    updateGameInfo();
+                }
+                ctx.drawImage(bird.image, bird.x, bird.y, bird.width, bird.height);
+            });
+        }
+
+        function spawnBird() {
+            if (!gameRunning) return;
+            
+            const x = Math.random() * (canvas.width - birdSize);
+            const speed = birdSpeed + Math.random() * level;
+            const size = birdSize - (level * 3);
+            const color = `hsl(${Math.random() * 60 + 20}, 100%, 50%)`;
+            const image = createBirdImage(size, color);
+            
+            birds.push({ 
+                x: x, 
+                y: -size, 
+                width: size, 
+                height: size, 
+                speed: speed,
+                image: image
+            });
+            
+            setTimeout(spawnBird, spawnRate);
+        }
+
+        function detectCollisions() {
+            bullets.forEach((bullet, bIndex) => {
+                birds.forEach((bird, eIndex) => {
+                    if (
+                        bullet.x < bird.x + bird.width &&
+                        bullet.x + bullet.width > bird.x &&
+                        bullet.y < bird.y + bird.height &&
+                        bullet.y + bullet.height > bird.y
+                    ) {
+                        bullets.splice(bIndex, 1);
+                        birds.splice(eIndex, 1);
+                        score++;
+                        updateGameInfo();
+                        
+                        if (level <= LEVEL_TARGETS.length && score >= LEVEL_TARGETS[level-1]) {
+                            if (level < LEVEL_TARGETS.length) {
+                                advanceLevel();
+                            } else {
+                                gameComplete();
+                            }
+                        }
+                    }
+                });
+            });
+        }
+
+        function advanceLevel() {
+            level++;
+            levelUpDisplayTime = Date.now();
+            birdSpeed += 0.8;
+            spawnRate = Math.max(300, spawnRate - 200);
+            birdSize = Math.max(30, birdSize - 5);
+            
+            document.getElementById('levelUp').textContent = `Level ${level-1} Complete!`;
+            document.getElementById('levelUp').style.color = LEVEL_COLORS[level-2];
+            document.getElementById('levelUp').style.opacity = 1;
+            
+            birds = [];
+            bullets = [];
+        }
+
+        function gameComplete() {
+            gameRunning = false;
+            document.getElementById('levelUp').textContent = "You Win All Levels!";
+            document.getElementById('levelUp').style.color = '#FFD700';
+            document.getElementById('levelUp').style.opacity = 1;
+        }
+
+        function updateGameInfo() {
+            const target = level <= LEVEL_TARGETS.length ? LEVEL_TARGETS[level-1] : "MAX";
+            document.getElementById('gameInfo').textContent = `Level: ${level} | Score: ${score} | Target: ${target}`;
+        }
+
+        function drawLevelUp() {
+            const now = Date.now();
+            if (now - levelUpDisplayTime < 1500) {
+                document.getElementById('levelUp').style.opacity = 1 - (now - levelUpDisplayTime) / 1500;
+            }
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawPlayer();
+            drawBullets();
+            drawBirds();
+            detectCollisions();
+            drawLevelUp();
+            
+            if (gameRunning) {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // Event listeners
+        window.addEventListener('mousemove', (e) => {
+            player.x = Math.max(0, Math.min(e.clientX - player.width / 2, canvas.width - player.width));
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && gameRunning) {
+                bullets.push({
+                    x: player.x + player.width / 2 - 2.5,
+                    y: player.y,
+                    width: 5,
+                    height: 15
+                });
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            player.y = canvas.height - 100;
+        });
+
+        // Start game
+        updateGameInfo();
+        spawnBird();
+        gameLoop();
+    </script>
+</body>
+</html>
